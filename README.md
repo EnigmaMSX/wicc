@@ -5,6 +5,7 @@ Windows Imaging Component(WIC) CLI test tool
     Syntax:  wicc [options or files ...]
 
     Options: begins with [- or /]
+     l, L    List installed Components
      c, C    Show Componentinfo
      m, M    Preferred Microsoft Component
      oldpng  Use Old(Windows7) PNG Decoder
