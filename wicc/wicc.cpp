@@ -1,6 +1,7 @@
 #include "targetver.h"
 #include <iostream>
 #include <iomanip>
+#include <string_view>
 #include <wincodec.h>
 #include <atlbase.h>
 
@@ -12,57 +13,88 @@ std::wstring guidtostring(const GUID& guid)
 	return str;
 }
 
-bool componentinfo(CComPtr<IWICBitmapDecoder> decoder)
+bool codecinfo(CComPtr<IWICBitmapCodecInfo> info)
 {
-	CComPtr<IWICBitmapDecoderInfo> info;
-	HRESULT hr = decoder->GetDecoderInfo(&info);
-	if(FAILED(hr))
-	{
-		std::wcout << L"failed: IWICBitmapDecoder::GetDecoderInfo\n";
-		return false;
-	}
-
 	UINT length;
-	WCHAR author[200];
-	hr = info->GetAuthor(static_cast<UINT>(std::size(author)), author, &length);
-	if(FAILED(hr))
+	WCHAR buffer[1024];
+	HRESULT hr = info->GetAuthor(static_cast<UINT>(std::size(buffer)), buffer, &length);
+	if(hr != S_OK)
 	{
 		std::wcout << L"failed: GetAuthor\n";
 		return false;
 	}
-	std::wcout << L"Author: " << author << std::endl;
+	std::wcout << L"Author: " << std::wstring_view(buffer, length) << std::endl;
 
-	WCHAR name[200];
-	hr = info->GetFriendlyName(static_cast<UINT>(std::size(name)), name, &length);
-	if(FAILED(hr))
+	hr = info->GetFriendlyName(static_cast<UINT>(std::size(buffer)), buffer, &length);
+	if(hr != S_OK)
 	{
 		std::wcout << L"failed: GetFriendlyName\n";
 		return false;
 	}
-	std::wcout << L"Name: " << name << std::endl;
+	std::wcout << L"Name: " << std::wstring_view(buffer, length) << std::endl;
 
-	WCHAR version[200];
-	hr = info->GetVersion(static_cast<UINT>(std::size(version)), version, &length);
-	if(FAILED(hr))
+	hr = info->GetFileExtensions(static_cast<UINT>(std::size(buffer)), buffer, &length);
+	if(hr != S_OK)
+	{
+		std::wcout << L"failed: GetFileExtensions\n";
+		return false;
+	}
+	std::wcout << L"Extensions: " << std::wstring_view(buffer, length) << std::endl;
+
+	hr = info->GetVersion(static_cast<UINT>(std::size(buffer)), buffer, &length);
+	if(hr != S_OK)
 	{
 		std::wcout << L"failed: GetVersion\n";
 		return false;
 	}
-	std::wcout << L"Version: " << version << std::endl;
+	std::wcout << L"Version: " << std::wstring_view(buffer, length) << std::endl;
 
 	CLSID clsid;
 	hr = info->GetCLSID(&clsid);
-	if(FAILED(hr))
+	if(hr != S_OK)
 	{
 		std::wcout << L"failed: GetCLSID\n";
 		return false;
 	}
 
 	auto decoderguid = guidtostring(clsid);
-	if(!decoderguid.empty())
-		std::wcout << L"CLSID: " << decoderguid.c_str() << std::endl;
+	std::wcout << L"CLSID: " << decoderguid.c_str() << std::endl;
 
 	return true;
+}
+
+void enumComponets(IWICImagingFactory* factory)
+{
+	CComPtr<IEnumUnknown> enumPtr;
+	HRESULT hr = factory->CreateComponentEnumerator(WICDecoder | WICEncoder, WICComponentEnumerateDefault, &enumPtr);
+	if(FAILED(hr))
+	{
+		std::wcout << L"failed: CreateComponentEnumerator\n";
+		return;
+	}
+
+	ULONG uLong;
+	CComPtr<IUnknown> component;
+	while(enumPtr->Next(1, &component, &uLong) == S_OK)
+	{
+		CComQIPtr<IWICBitmapCodecInfo> info(component);
+		codecinfo(info);
+		std::wcout << std::endl;
+	}
+}
+
+bool decoderinfo(CComPtr<IWICBitmapDecoder> decoder)
+{
+	CComPtr<IWICBitmapDecoderInfo> dinfo;
+	HRESULT hr = decoder->GetDecoderInfo(&dinfo);
+	if(FAILED(hr))
+	{
+		std::wcout << L"failed: IWICBitmapDecoder::GetDecoderInfo\n";
+		return false;
+	}
+
+	CComQIPtr<IWICBitmapCodecInfo> info(dinfo);
+	return codecinfo(info);
 }
 
 bool load(IWICImagingFactory* factory, CComPtr<IWICBitmapDecoder> decoder)
@@ -142,6 +174,7 @@ int wmain(int argc, wchar_t* argv[])
 	{
 		std::wcout << L"Syntax:  wicc [options or files ...]" << std::endl << std::endl;
 		std::wcout << L"Options: begins with [- or /]" << std::endl;
+		std::wcout << L" l, L    List installed Components" << std::endl;
 		std::wcout << L" c, C    Show Componentinfo" << std::endl;
 		std::wcout << L" m, M    Preferred Microsoft Component" << std::endl;
 		std::wcout << L" oldpng  Use Windows7 PNG Decoder" << std::endl;
@@ -177,6 +210,8 @@ int wmain(int argc, wchar_t* argv[])
 		{
 			if(_wcsicmp(arg + 1, L"oldpng") == 0)
 				force_oldpng = true;
+			else if(arg[1] == L'l' || arg[1] == L'L')
+				enumComponets(factory);
 			else if(arg[1] == L'c' || arg[1] == L'C')
 				show_componentinfo = true;
 			else if(arg[1] == L'm' || arg[1] == L'M')
@@ -224,7 +259,7 @@ int wmain(int argc, wchar_t* argv[])
 				}
 			}
 			if(show_componentinfo)
-				componentinfo(decoder);
+				decoderinfo(decoder);
 			load(factory, decoder);
 			std::wcout << std::endl;
 		}
